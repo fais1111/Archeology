@@ -5,7 +5,7 @@ import datetime
 import json
 
 app = Flask(__name__)
-app.secret_key = 'cesl-fais'
+app.secret_key = os.environ.get('SECRET_KEY', 'default-secret-key')
 
 # Configuration
 UPLOAD_FOLDER = 'static/models'
