@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>3D Model Viewer</h2>
+<div id="viewer-container">
+    <canvas id="model-canvas"></canvas>
+    <div id="loading-indicator" style="display: none;">
+        <div class="spinner"></div>
+        <p>Loading model...</p>
+    </div>
+    <div id="viewer-info">
+        <div id="fps-counter">FPS: 0</div>
+        <div id="camera-info">Camera: (0, 0, 5)</div>
+    </div>
+</div>
+<div id="viewer-controls">
+    <div class="control-group">
+        <button id="reset-view">Reset View</button>
+        <button id="toggle-rotation">Pause Rotation</button>
+        <button id="toggle-wireframe">Wireframe</button>
+        <button id="toggle-fullscreen">Fullscreen</button>
+    </div>
+    <div class="control-group">
+        <label>Background: <input type="color" id="bg-color" value="#2c2c2c"></label>
+        <label>Model Color: <input type="color" id="model-color" value="#888888"></label>
+    </div>
+    <div class="control-group">
+        <label>Rotation Speed: <input type="range" id="rotation-speed" min="0" max="0.02" step="0.001" value="0.005"></label>
+        <label>Zoom Speed: <input type="range" id="zoom-speed" min="0.5" max="3" step="0.1" value="1"></label>
+    </div>
+    <div class="control-group">
+        <button id="toggle-grid">Hide Grid</button>
+        <button id="toggle-axes">Hide Axes</button>
+        <button id="toggle-shadows">Enable Shadows</button>
+        <button id="screenshot">Screenshot</button>
+    </div>
+</div>
+<div id="model-info">
+    <h3 id="model-name">{% if model %}{{ model.name }}{% else %}No model loaded{% endif %}</h3>
+    <p>Type: <span id="model-type">{% if model %}{{ model.type }}{% else %}N/A{% endif %}</span></p>
+    <p>Size: <span id="model-size">{% if model %}{{ model.size }}{% else %}N/A{% endif %}</span></p>
+    <p>Vertices: <span id="vertex-count">0</span></p>
+    <p>Faces: <span id="face-count">0</span></p>
+    <p>Bounding Box: <span id="bbox-size">N/A</span></p>
+</div>
+
+<!-- Three.js and related libraries -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/FBXLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/DRACOLoader.js"></script>
+
+<script>
+    // Initialize Three.js scene
+    let scene, camera, renderer, controls, model;
+    let rotateModel = true;
+    let defaultModelColor = 0x888888;
+    let gridHelper, axesHelper;
+    let rotationSpeed = 0.005;
+    let isWireframe = false;
+    let shadowsEnabled = false;
+    let frameCount = 0;
+    let lastTime = performance.now();
+    
+    // Get the model filename from Flask if available
+    const modelFilename = "{% if model %}{{ url_for('static', filename='models/' + model.filename) }}{% else %}''{% endif %}";
+    const modelFileExt = "{% if model %}{{ model.filename.split('.').pop()|lower }}{% else %}''{% endif %}";
+
+    init();
+
+    function init() {
+        // Scene setup
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x2c2c2c);
+        
+        // Camera setup with better initial position
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 2000);
+        camera.position.set(5, 5, 5);
+        camera.lookAt(0, 0, 0);
+        
+        // Renderer setup with better quality
+        renderer = new THREE.WebGLRenderer({ 
+            canvas: document.getElementById('model-canvas'), 
+            antialias: true,
+            alpha: true,
+            preserveDrawingBuffer: true // For screenshots
+        });
+        renderer.setSize(window.innerWidth * 0.8, window.innerHeight * 0.7);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = false;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        
+        // Enhanced lighting setup
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(10, 10, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        scene.add(directionalLight);
+        
+        // Add fill light
+        const fillLight = new THREE.DirectionalLight(0x4488ff, 0.3);
+        fillLight.position.set(-5, 0, -5);
+        scene.add(fillLight);
+        
+        // Enhanced controls
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.enableZoom = true;
+        controls.enablePan = true;
+        controls.enableRotate = true;
+        controls.zoomSpeed = 1.0;
+        controls.panSpeed = 0.8;
+        controls.rotateSpeed = 0.4;
+        controls.minDistance = 0.1;
+        controls.maxDistance = 1000;
+        controls.maxPolarAngle = Math.PI;
+        
+        // Grid and axes helpers
+        gridHelper = new THREE.GridHelper(20, 20, 0x888888, 0x444444);
+        scene.add(gridHelper);
+        
+        axesHelper = new THREE.AxesHelper(10);
+        scene.add(axesHelper);
+        
+        // Load model if one is specified
+        if (modelFilename) {
+            loadModel(modelFilename, modelFileExt);
+        }
+        
+        // Event listeners
+        setupEventListeners();
+        
+        // Start animation loop
+        animate();
+    }
+    
+    function setupEventListeners() {
+        window.addEventListener('resize', onWindowResize);
+        document.getElementById('reset-view').addEventListener('click', resetView);
+        document.getElementById('toggle-rotation').addEventListener('click', toggleRotation);
+        document.getElementById('toggle-wireframe').addEventListener('click', toggleWireframe);
+        document.getElementById('toggle-fullscreen').addEventListener('click', toggleFullscreen);
+        document.getElementById('bg-color').addEventListener('input', updateBackground);
+        document.getElementById('model-color').addEventListener('input', updateModelColor);
+        document.getElementById('rotation-speed').addEventListener('input', updateRotationSpeed);
+        document.getElementById('zoom-speed').addEventListener('input', updateZoomSpeed);
+        document.getElementById('toggle-grid').addEventListener('click', toggleGrid);
+        document.getElementById('toggle-axes').addEventListener('click', toggleAxes);
+        document.getElementById('toggle-shadows').addEventListener('click', toggleShadows);
+        document.getElementById('screenshot').addEventListener('click', takeScreenshot);
+        
+        // Mouse interaction feedback
+        const canvas = document.getElementById('model-canvas');
+        canvas.addEventListener('mousedown', () => canvas.style.cursor = 'grabbing');
+        canvas.addEventListener('mouseup', () => canvas.style.cursor = 'grab');
+        canvas.addEventListener('mouseleave', () => canvas.style.cursor = 'default');
+        canvas.style.cursor = 'grab';
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            switch(e.code) {
+                case 'KeyR': resetView(); break;
+                case 'Space': e.preventDefault(); toggleRotation(); break;
+                case 'KeyW': toggleWireframe(); break;
+                case 'KeyG': toggleGrid(); break;
+                case 'KeyA': toggleAxes(); break;
+                case 'KeyF': toggleFullscreen(); break;
+            }
+        });
+    }
+    
+    function loadModel(url, ext) {
+        showLoading(true);
+        
+        // Remove existing model
+        if (model) {
+            scene.remove(model);
+        }
+        
+        const loadingManager = new THREE.LoadingManager();
+        const loader = getLoaderForExtension(ext);
+        
+        if (!loader) {
+            console.error('No loader available for file type:', ext);
+            showLoading(false);
+            return;
+        }
+        
+        loadingManager.onProgress = (url, loaded, total) => {
+            const progress = (loaded / total) * 100;
+            console.log(`Loading progress: ${progress.toFixed(1)}%`);
+        };
+        
+        loader.load(
+            url,
+            (object) => {
+                model = prepareModel(object);
+                scene.add(model);
+                
+                // Update model info
+                updateModelInfo(model);
+                
+                // Center and zoom to model
+                centerModel(model);
+                
+                showLoading(false);
+            },
+            (xhr) => {
+                if (xhr.lengthComputable) {
+                    const progress = (xhr.loaded / xhr.total) * 100;
+                    console.log(`${progress.toFixed(1)}% loaded`);
+                }
+            },
+            (error) => {
+                console.error('Error loading model:', error);
+                showLoading(false);
+            }
+        );
+    }
+    
+    function getLoaderForExtension(ext) {
+        switch(ext) {
+            case 'obj': return new THREE.OBJLoader();
+            case 'gltf':
+            case 'glb': 
+                const gltfLoader = new THREE.GLTFLoader();
+                return gltfLoader;
+            case 'fbx': return new THREE.FBXLoader();
+            default: return null;
+        }
+    }
+    
+    function prepareModel(object) {
+        // Handle different loader outputs
+        let processedModel;
+        
+        if (object.scene) { // GLTF
+            processedModel = object.scene;
+        } else if (object.children) { // OBJ, FBX
+            processedModel = object;
+        } else {
+            processedModel = object;
+        }
+        
+        // Apply consistent material and setup to all meshes
+        processedModel.traverse(child => {
+            if (child.isMesh) {
+                // Ensure geometry has normals
+                if (!child.geometry.attributes.normal) {
+                    child.geometry.computeVertexNormals();
+                }
+                
+                // Apply standard material if none exists or for OBJ files
+                if (!child.material || child.material.type === 'MeshBasicMaterial') {
+                    child.material = new THREE.MeshStandardMaterial({
+                        color: defaultModelColor,
+                        roughness: 0.6,
+                        metalness: 0.1,
+                        side: THREE.DoubleSide
+                    });
+                }
+                
+                child.castShadow = true;
+                child.receiveShadow = true;
+            }
+        });
+        
+        return processedModel;
+    }
+    
+    function centerModel(model) {
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // Center the model
+        model.position.x = -center.x;
+        model.position.y = -center.y;
+        model.position.z = -center.z;
+        
+        // Calculate optimal camera distance
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+        
+        // Add padding and set camera position
+        cameraZ *= 2.5;
+        const distance = Math.sqrt(cameraZ * cameraZ / 3);
+        camera.position.set(distance, distance, distance);
+        
+        // Update controls
+        controls.target.set(0, 0, 0);
+        controls.minDistance = maxDim * 0.1;
+        controls.maxDistance = maxDim * 10;
+        controls.update();
+    }
+    
+    function updateModelInfo(model) {
+        let vertices = 0;
+        let faces = 0;
+        
+        model.traverse(child => {
+            if (child.isMesh) {
+                vertices += child.geometry.attributes.position.count;
+                faces += child.geometry.attributes.position.count / 3;
+            }
+        });
+        
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        
+        document.getElementById('vertex-count').textContent = vertices.toLocaleString();
+        document.getElementById('face-count').textContent = Math.floor(faces).toLocaleString();
+        document.getElementById('bbox-size').textContent = 
+            `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`;
+    }
+    
+    function showLoading(show) {
+        document.getElementById('loading-indicator').style.display = show ? 'flex' : 'none';
+    }
+    
+    function resetView() {
+        if (model) {
+            centerModel(model);
+        } else {
+            camera.position.set(5, 5, 5);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+    }
+    
+    function toggleRotation() {
+        rotateModel = !rotateModel;
+        document.getElementById('toggle-rotation').textContent = 
+            rotateModel ? 'Pause Rotation' : 'Resume Rotation';
+    }
+    
+    function toggleWireframe() {
+        if (!model) return;
+        
+        isWireframe = !isWireframe;
+        model.traverse(child => {
+            if (child.isMesh && child.material) {
+                child.material.wireframe = isWireframe;
+            }
+        });
+        document.getElementById('toggle-wireframe').textContent = 
+            isWireframe ? 'Solid' : 'Wireframe';
+    }
+    
+    function toggleFullscreen() {
+        const container = document.getElementById('viewer-container');
+        if (!document.fullscreenElement) {
+            container.requestFullscreen().then(() => {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+            });
+        } else {
+            document.exitFullscreen().then(() => {
+                onWindowResize();
+            });
+        }
+    }
+    
+    function updateBackground(e) {
+        scene.background = new THREE.Color(e.target.value);
+    }
+    
+    function updateModelColor(e) {
+        if (!model) return;
+        
+        const color = new THREE.Color(e.target.value);
+        defaultModelColor = color.getHex();
+        
+        model.traverse(child => {
+            if (child.isMesh && child.material) {
+                child.material.color.set(color);
+            }
+        });
+    }
+    
+    function updateRotationSpeed(e) {
+        rotationSpeed = parseFloat(e.target.value);
+    }
+    
+    function updateZoomSpeed(e) {
+        controls.zoomSpeed = parseFloat(e.target.value);
+    }
+    
+    function toggleGrid() {
+        gridHelper.visible = !gridHelper.visible;
+        document.getElementById('toggle-grid').textContent = 
+            gridHelper.visible ? 'Hide Grid' : 'Show Grid';
+    }
+    
+    function toggleAxes() {
+        axesHelper.visible = !axesHelper.visible;
+        document.getElementById('toggle-axes').textContent = 
+            axesHelper.visible ? 'Hide Axes' : 'Show Axes';
+    }
+    
+    function toggleShadows() {
+        shadowsEnabled = !shadowsEnabled;
+        renderer.shadowMap.enabled = shadowsEnabled;
+        
+        // Update all lights
+        scene.traverse(child => {
+            if (child.isLight && child.type === 'DirectionalLight') {
+                child.castShadow = shadowsEnabled;
+            }
+        });
+        
+        document.getElementById('toggle-shadows').textContent = 
+            shadowsEnabled ? 'Disable Shadows' : 'Enable Shadows';
+    }
+    
+    function takeScreenshot() {
+        renderer.render(scene, camera);
+        const canvas = renderer.domElement;
+        const link = document.createElement('a');
+        link.download = 'model-screenshot.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+    
+    function updateUI() {
+        // Update FPS counter
+        frameCount++;
+        const currentTime = performance.now();
+        if (currentTime - lastTime >= 1000) {
+            const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+            document.getElementById('fps-counter').textContent = `FPS: ${fps}`;
+            frameCount = 0;
+            lastTime = currentTime;
+        }
+        
+        // Update camera position
+        const pos = camera.position;
+        document.getElementById('camera-info').textContent = 
+            `Camera: (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`;
+    }
+    
+    function onWindowResize() {
+        const isFullscreen = !!document.fullscreenElement;
+        const width = isFullscreen ? window.innerWidth : window.innerWidth * 0.8;
+        const height = isFullscreen ? window.innerHeight : window.innerHeight * 0.7;
+        
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(width, height);
+    }
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        
+        // Rotate model slowly if enabled
+        if (rotateModel && model) {
+            model.rotation.y += rotationSpeed;
+        }
+        
+        controls.update();
+        updateUI();
+        renderer.render(scene, camera);
+    }
+</script>
+
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>3D Models</h2>
+{% if models %}
+<div id="models-list">
+    {% for model in models %}
+    <div class="model-item">
+        <h3>{{ model.name }}</h3>
+        <p>Type: {{ model.type }}</p>
+        <p>Size: {{ model.size }}</p>
+        <p>Uploaded: {{ model.date }}</p>
+        <div class="model-actions">
+            <a href="{{ url_for('viewer', model_id=model.id) }}">View</a>
+            <a href="{{ url_for('download_model', model_id=model.id) }}">Download</a>
+            <!--<button onclick="deleteModel({{ 'ger' }})">Delete</button>-->
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p>No models available. <a href="{{ url_for('upload') }}">Upload a model</a> to get started.</p>
+{% endif %}
+{% endblock %}

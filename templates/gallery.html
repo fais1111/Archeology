@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Model Gallery</h2>
+{% if models %}
+<div id="gallery-grid">
+    {% for model in models %}
+    <div class="gallery-item">
+        <div class="model-thumbnail">
+            {% if model.thumbnail %}
+            <img src="{{ model.thumbnail }}" alt="{{ model.name }}">
+            {% else %}
+            <div class="no-thumbnail">No Preview</div>
+            {% endif %}
+        </div>
+        <div class="model-details">
+            <h3>{{ model.name }}</h3>
+            <p>{{ model.description }}</p>
+            <p>Type: {{ model.type }}</p>
+            <div class="gallery-actions">
+                <a href="{{ url_for('viewer', model_id=model.id) }}">View</a>
+                <a href="{{ url_for('download_model', model_id=model.id) }}">Download</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p>No models in gallery. <a href="{{ url_for('upload') }}">Upload a model</a> to get started.</p>
+{% endif %}
+{% endblock %}
