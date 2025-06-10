@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SriLanka 3D Model Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<div class="nav-buttons left">
+        <a href="{{ url_for('home') }}" class="nav-btn">
+            <span>🏠</span>
+            <span>Home</span>
+        </a>
+    </div>
+
+    <div class="nav-buttons right">
+        <a href="{{ url_for('models') }}" class="nav-btn">
+            <span>📁</span>
+            <span>Models</span>
+        </a>
+    </div>
+
+<style>
+.nav-buttons {
+            position: fixed;
+            top: 20px;
+            z-index: 1000;
+        }
+
+.nav-buttons.left {
+            left: 20px;
+        }
+
+.nav-buttons.right {
+            right: 20px;
+        }
+
+.nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.95);
+            color: #667eea;
+            text-decoration: none;
+            padding: 12px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(102, 126, 234, 0.2);
+            transition: all 0.3s ease;
+        }
+
+.nav-btn:hover {
+            background: rgba(102, 126, 234, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            border-color: rgba(102, 126, 234, 0.4);
+        }
+
+        .nav-btn:active {
+            transform: translateY(0);
+        }
+
+</style>
+<h2>Contact Form</h2>
+{% if submitted %}
+<p>Thanks for contacting us, {{ name }}!</p>
+<p>Email: {{ email }}</p>
+<p>Message: {{ message }}</p>
+{% else %}
+<form method="POST">
+    <input type="text" name="name" placeholder="Your name" required>
+    <input type="email" name="email" placeholder="Your email" required>
+    <textarea name="message" placeholder="Your message" required></textarea>
+    <button type="submit">Send</button>
+</form>
+{% endif %}
+
