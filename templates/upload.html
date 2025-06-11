@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 <h2>Upload 3D Model</h2>
 {% if uploaded %}
 <p>Model "{{ filename }}" uploaded successfully!</p>
